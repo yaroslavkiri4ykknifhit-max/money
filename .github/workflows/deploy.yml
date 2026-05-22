@@ -37,10 +37,6 @@ jobs:
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
-        with:
-          # Automatically inject basePath in your Next.js config under certain circumstances,
-          # but since we already manually configured basePath: "/money", we can disable or let it run.
-          enable_intenters: false
 
       - name: Install dependencies
         run: npm ci
