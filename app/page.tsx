@@ -3,12 +3,21 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { KeyRound, Lock, Loader2 } from 'lucide-react';
+import { verifyInviteCode } from '@/lib/sheetsClient';
 
 export default function Gatekeeper() {
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+  // Redirect if already logged in
+  useEffect(() => {
+    const token = localStorage.getItem('session_token');
+    if (token) {
+      router.push('/lessons?id=1');
+    }
+  }, [router]);
 
   // Handle submit
   const handleSubmit = async (e: React.FormEvent) => {
@@ -24,26 +33,21 @@ export default function Gatekeeper() {
     setLoading(true);
 
     try {
-      const res = await fetch('/api/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Неверный или использованный код доступа');
+      const isValid = await verifyInviteCode(code);
+      if (!isValid) {
+        throw new Error('Неверный или использованный код доступа');
       }
 
       // Successful login
-      router.push('/lessons/1');
-      router.refresh();
+      localStorage.setItem('session_token', code);
+      router.push('/lessons?id=1');
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
   };
+
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-zinc-50 px-4">

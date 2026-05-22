@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { 
   Menu, 
   X, 
@@ -14,9 +14,12 @@ import {
   LogOut,
   ChevronDown
 } from 'lucide-react';
+import { fetchModules, fetchLessons, fetchLessonById } from '@/lib/sheetsClient';
 
-export default function LessonPage({ params }: { params: Promise<{ id: string }> }) {
-  const [currentLessonId, setCurrentLessonId] = useState<string>('');
+function LessonPageContent() {
+  const searchParams = useSearchParams();
+  const currentLessonId = searchParams.get('id') || '1';
+
   const [lesson, setLesson] = useState<any>(null);
   const [modules, setModules] = useState<any[]>([]);
   const [lessons, setLessons] = useState<any[]>([]);
@@ -26,52 +29,41 @@ export default function LessonPage({ params }: { params: Promise<{ id: string }>
   
   const router = useRouter();
 
-  // Resolve params
-  useEffect(() => {
-    params.then((resolvedParams) => {
-      setCurrentLessonId(resolvedParams.id);
-    });
-  }, [params]);
-
   // Fetch all initial data
   useEffect(() => {
     if (!currentLessonId) return;
 
     const fetchData = async () => {
       try {
+        // Check auth client-side
+        const token = localStorage.getItem('session_token');
+        if (!token) {
+          router.push('/');
+          return;
+        }
+
         // Fetch current lesson
-        const lessonRes = await fetch(`/api/lessons/${currentLessonId}`);
-        if (!lessonRes.ok) {
-          if (lessonRes.status === 401) {
-            router.push('/');
-            return;
-          }
+        const currentLesson = await fetchLessonById(currentLessonId);
+        if (!currentLesson) {
           throw new Error('Урок не найден');
         }
-        const lessonData = await lessonRes.json();
-        setLesson(lessonData.lesson);
+        setLesson(currentLesson);
 
         // Fetch all modules
-        const modulesRes = await fetch('/api/modules');
-        if (modulesRes.ok) {
-          const modulesData = await modulesRes.json();
-          setModules(modulesData.modules || []);
-          
-          // Auto-expand current module
-          if (lessonData.lesson?.moduleId) {
-            setExpandedModules(prev => ({
-              ...prev,
-              [lessonData.lesson.moduleId]: true
-            }));
-          }
+        const allModules = await fetchModules();
+        setModules(allModules || []);
+        
+        // Auto-expand current module
+        if (currentLesson?.moduleId) {
+          setExpandedModules(prev => ({
+            ...prev,
+            [currentLesson.moduleId]: true
+          }));
         }
 
         // Fetch all lessons
-        const lessonsRes = await fetch('/api/lessons');
-        if (lessonsRes.ok) {
-          const lessonsData = await lessonsRes.json();
-          setLessons(lessonsData.lessons || []);
-        }
+        const allLessons = await fetchLessons();
+        setLessons(allLessons || []);
 
       } catch (err) {
         console.error('Error fetching data:', err);
@@ -106,10 +98,10 @@ export default function LessonPage({ params }: { params: Promise<{ id: string }>
   const { prev: prevLesson, next: nextLesson } = getNavLessons();
 
   const handleLogout = async () => {
-    // Basic cookie clearing by setting max-age to 0
+    // Clear cookies and localStorage
     document.cookie = 'session_token=; path=/; max-age=0;';
+    localStorage.removeItem('session_token');
     router.push('/');
-    router.refresh();
   };
 
   if (loading) {
@@ -177,7 +169,7 @@ export default function LessonPage({ params }: { params: Promise<{ id: string }>
                       <button
                         key={les.id}
                         onClick={() => {
-                          router.push(`/lessons/${les.id}`);
+                          router.push(`/lessons?id=${les.id}`);
                           setSidebarOpen(false);
                         }}
                         className={`w-full text-left py-2 px-3 rounded-lg text-xs transition-all flex items-center justify-between ${
@@ -240,7 +232,7 @@ export default function LessonPage({ params }: { params: Promise<{ id: string }>
           >
             <Menu className="w-6 h-6" />
           </button>
-          <span className="font-bold text-zinc-900 text-sm tracking-tight">NWO Platform</span>
+          <span className="font-bold text-zinc-950 text-sm tracking-tight">NWO Platform</span>
           <button 
             onClick={handleLogout}
             className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-500"
@@ -312,7 +304,7 @@ export default function LessonPage({ params }: { params: Promise<{ id: string }>
             {/* Prev Button */}
             {prevLesson ? (
               <button
-                onClick={() => router.push(`/lessons/${prevLesson.id}`)}
+                onClick={() => router.push(`/lessons?id=${prevLesson.id}`)}
                 className="flex items-center gap-2 px-5 py-3 rounded-xl border border-zinc-200 text-zinc-700 hover:text-zinc-950 hover:bg-zinc-50 font-medium text-sm transition-all"
               >
                 <ArrowLeft className="w-4 h-4" />
@@ -341,7 +333,7 @@ export default function LessonPage({ params }: { params: Promise<{ id: string }>
             {/* Next Button */}
             {nextLesson ? (
               <button
-                onClick={() => router.push(`/lessons/${nextLesson.id}`)}
+                onClick={() => router.push(`/lessons?id=${nextLesson.id}`)}
                 className="flex items-center gap-2 px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold text-sm transition-all shadow-sm shadow-emerald-600/10"
               >
                 <span className="hidden sm:inline">Следующий</span> Далее
@@ -356,5 +348,17 @@ export default function LessonPage({ params }: { params: Promise<{ id: string }>
 
       </div>
     </div>
+  );
+}
+
+export default function LessonPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="animate-spin rounded-full h-10 w-10 border-2 border-emerald-600 border-t-transparent"></div>
+      </div>
+    }>
+      <LessonPageContent />
+    </Suspense>
   );
 }
